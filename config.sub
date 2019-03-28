@@ -2,7 +2,7 @@
 # Configuration validation subroutine script.
 #   Copyright 1992-2020 Free Software Foundation, Inc.
 
-timestamp='2020-01-01'
+timestamp='2020-04-04'
 
 # This file is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by
@@ -584,6 +584,10 @@ case $1 in
 			tpf)
 				basic_machine=s390x-ibm
 				os=tpf
+				;;
+			twili)
+				basic_machine=aarch64-unknown
+				os=elf
 				;;
 			udi29k)
 				basic_machine=a29k-amd
@@ -1508,6 +1512,9 @@ case $os in
 	ios)
 		;;
 	none)
+		;;
+	twili)
+		os=elf
 		;;
 	*-eabi)
 		;;
