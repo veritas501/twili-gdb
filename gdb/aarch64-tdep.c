@@ -3465,6 +3465,106 @@ aarch64_cannot_store_register (struct gdbarch *gdbarch, int regnum)
 	  || regnum == AARCH64_PAUTH_CMASK_REGNUM (tdep->pauth_reg_base));
 }
 
+/* Service function for corefiles and info proc.  */
+
+static void
+read_mapping(const char *line,
+             ULONGEST *addr, ULONGEST *endaddr,
+             const char **permissions, size_t *permissions_len,
+             ULONGEST *offset,
+             const char **device, size_t *device_len,
+             ULONGEST *inode,
+             const char **filename) {
+  const char *p = line;
+
+  *addr = strtoulst(p, &p, 16);
+  if (*p == '-')
+    p++;
+  *endaddr = strtoulst(p, &p, 16);
+
+  p = skip_spaces(p);
+  *permissions = p;
+  while (*p && !isspace(*p))
+    p++;
+  *permissions_len = p - *permissions;
+
+  *offset = strtoulst(p, &p, 16);
+
+  p = skip_spaces(p);
+  *device = p;
+  while (*p && !isspace(*p))
+    p++;
+  *device_len = p - *device;
+
+  *inode = strtoulst(p, &p, 10);
+
+  p = skip_spaces(p);
+  *filename = p;
+}
+
+/* Implement the "info proc" command.  */
+static void
+twili_info_proc(struct gdbarch *gdbarch, const char *args,
+                enum info_proc_what what) {
+  /* A long is used for pid instead of an int to avoid a loss of precision
+    compiler warning from the output of strtoul.  */
+  char filename[100];
+
+  if (!target_has_execution()) {
+    error(_("No current process: you must name one."));
+  }
+
+  if (what != IP_MAPPINGS) {
+    error(_("Only support mappings."));
+  }
+
+  if (gdbarch_addr_bit(gdbarch) == 32) {
+    error(_("Not support 32bit."));
+  }
+
+  xsnprintf(filename, sizeof filename, "SWITCH_MAPS");
+  gdb::unique_xmalloc_ptr<char> map = target_fileio_read_stralloc(NULL, filename);
+  if (map == NULL) {
+    warning(_("unable to open maps '%s'"), filename);
+    return;
+  }
+
+  char *line;
+
+  // print header
+  printf_filtered(_("Mapped address spaces:\n\n"));
+  printf_filtered("  %18s %18s %6s %10s %10s %s\n",
+                  "Start Addr", "  End Addr",
+                  "  Perm", "      Size",
+                  "    Offset", "objfile");
+
+  // print mappings
+  char *saveptr;
+  for (line = strtok_r(map.get(), "\n", &saveptr);
+       line;
+       line = strtok_r(NULL, "\n", &saveptr)) {
+    ULONGEST addr, endaddr, offset, inode;
+    const char *permissions, *device, *mapping_filename;
+    size_t permissions_len, device_len;
+
+    read_mapping(line, &addr, &endaddr,
+                 &permissions, &permissions_len,
+                 &offset, &device, &device_len,
+                 &inode, &mapping_filename);
+
+    char *new_permissions = strdup(permissions);
+    new_permissions[permissions_len] = 0;
+    printf_filtered("  %18s %18s %6s %10s %10s %s\n",
+                    paddress(gdbarch, addr),
+                    paddress(gdbarch, endaddr),
+                    new_permissions,
+                    hex_string(endaddr - addr),
+                    hex_string(offset),
+                    *mapping_filename ? mapping_filename : "");
+    free(new_permissions);
+  }
+}
+
 /* Initialize the current architecture based on INFO.  If possible,
    re-use an architecture from ARCHES, which is a list of
    architectures already created during this debugging session.
@@ -3707,6 +3807,8 @@ aarch64_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
 		  &aarch64_register_aliases[i].regnum);
 
   register_aarch64_ravenscar_ops (gdbarch);
+
+  set_gdbarch_info_proc (gdbarch, twili_info_proc);
 
   return gdbarch;
 }
